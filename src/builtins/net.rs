@@ -1,5 +1,7 @@
 use core::net::IpAddr;
+use std::string::ToString;
 use std::sync::Arc;
+use std::format;
 
 use crate::ast::{Expr, Ref};
 use crate::builtins;
@@ -29,12 +31,12 @@ pub fn cidr_is_valid(
     let cidr = ensure_string("cidr_is_valid", &params[0], &args[0])?;
 
     match is_valid_cidr(cidr) {
-        Ok(result) => aOk(result),
+        Ok(result) => aOk(Value::Bool(result)),
         Err(_) => bail!(span.error("invalid CIDR")),
     }
 }
 
-fn is_valid_cidr(cidr: Arc<str>) -> Result<Value> {
+fn is_valid_cidr(cidr: Arc<str>) -> Result<bool> {
     let Some((ip_addr, prefix_len)) = cidr.split_once("/") else {
         bail!("invalid CIDR")
     };
@@ -54,10 +56,60 @@ fn is_valid_cidr(cidr: Arc<str>) -> Result<Value> {
                     }
                 }
             }
-            aOk(Value::Bool(true))
+            aOk(true)
         }
         Err(_) => bail!("Invalid CIDR"),
     }
+}
+
+pub fn cidr_contains(
+    span: &Span,
+    params: &[Ref<Expr>],
+    args: &[Value],
+    _strict: bool,
+) -> Result<Value> {
+    ensure_args_count(span, "cidr_contains", params, args, 2)?;
+    let cidr = ensure_string("cidr_contains", &params[0], &args[0])?;
+    let cidr_or_ip = ensure_string("cidr_contains", &params[1], &args[1])?;
+
+    match is_valid_cidr(cidr.clone()) {
+        Ok(res) => {
+            if !res {
+                bail!(span.error(format!("invalid CIDR: {}", cidr).as_str()))
+            }
+
+            match cidr_or_ip.split_once("/") {
+                Some((range, mask)) => {
+                    match range.parse::<IpAddr>() {
+                        Ok(ip) => {
+                            match ip {
+                                IpAddr::V4(ip4) => {
+                                    ip4.();
+                                },
+                                IpAddr::V6(ip6) => {
+                                    ip6.octets();
+                                }
+                            }
+                        },
+                        Err(_) => bail!("invalid IP address: {}", range)
+                    }
+                }
+                None => {
+                    match cidr_or_ip.parse::<IpAddr>() {
+                        Ok(ip) => (),
+                        Err(_) => bail!("invalid IP address: {}", cidr_or_ip)
+                    }
+                }
+            }
+        },
+        Err(err) => bail!(span.error("invalid CIDR"))
+    }
+
+    // take cidr hi + cidr low, and ip_or_cidr hi and ip_or_cidr low
+    // if cidr hi >= ip_or_cidr low && cidr low <= ip_or_cidr low, contains == true
+    // otherwise, false
+
+    Ok(Value::Bool((true)))
 }
 
 #[cfg(test)]
