@@ -84,7 +84,7 @@ pub fn cidr_contains(
                         Ok(ip) => {
                             match ip {
                                 IpAddr::V4(ip4) => {
-                                    ip4.();
+                                    ip4.octets();
                                 },
                                 IpAddr::V6(ip6) => {
                                     ip6.octets();
